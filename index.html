@@ -446,6 +446,10 @@
     max-height: 520px;
     overflow-y: auto;
   }
+  .grid-body.loading {
+    pointer-events: none;
+    opacity: 0.45;
+  }
   .grid-body::-webkit-scrollbar { width: 6px; }
   .grid-body::-webkit-scrollbar-track { background: var(--surface); }
   .grid-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
@@ -1437,7 +1441,7 @@ function buildInputPage() {
       <div class="time-label-header"></div>
       ${dayHeaders}
     </div>
-    <div class="grid-body" id="grid-body">${rows}</div>
+    <div class="grid-body${state.inputLoading ? ' loading' : ''}" id="grid-body">${rows}</div>
   </div>
 
   <div class="actions">
