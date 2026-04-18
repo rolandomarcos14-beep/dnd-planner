@@ -1043,6 +1043,7 @@ const state = {
   loadError: '',
   saveStatus: 'idle',   // 'idle' | 'saving' | 'error'
   saveError: '',
+  inputLoading: false,  // true while pre-filling grid from GitHub
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -1086,14 +1087,20 @@ function goToInput() {
   loadInputData();
 }
 
+let _inputLoadSeq = 0;
+
 async function loadInputData() {
   if (!state.name) return;
+  const seq    = ++_inputLoadSeq;
   const weekStr  = weekDateStrs(state.weekMonday)[0];
   const dateStrs = weekDateStrs(state.weekMonday);
   const tz       = resolveTimezone(state.timezone);
+  state.inputLoading = true;
+  render();
   try {
     const fileData = await ghReadChar(state.name);
-    const entry    = fileData[weekStr];
+    if (seq !== _inputLoadSeq) return; // stale response — a newer week was requested
+    const entry = fileData[weekStr];
     state.selectedCells.clear();
     if (entry && !entry.unavailable && entry.utcSlots) {
       entry.utcSlots.forEach(ms => {
@@ -1102,8 +1109,8 @@ async function loadInputData() {
       });
     }
   } catch (_) { /* leave grid blank on error */ }
+  state.inputLoading = false;
   render();
-  attachHandlers();
 }
 
 function goToResults() {
@@ -1128,7 +1135,6 @@ async function loadResultsData() {
     state.loadError  = e.message;
   }
   render();
-  attachHandlers();
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -1424,7 +1430,7 @@ function buildInputPage() {
     <button id="btn-next-week">Next →</button>
   </div>
 
-  <p class="hint">Drag to select. Drag on a selected cell to deselect.</p>
+  ${state.inputLoading ? `<p class="hint" style="color:var(--accent)">⏳ Loading your saved availability…</p>` : `<p class="hint">Drag to select. Drag on a selected cell to deselect.</p>`}
 
   <div class="grid-container">
     <div class="grid-header">
@@ -1437,6 +1443,7 @@ function buildInputPage() {
   <div class="actions">
     <button class="btn btn-unavailable" id="btn-unavailable">😴 Unavailable This Week</button>
     <button class="btn btn-secondary" id="btn-clear">Clear All</button>
+    <button class="btn btn-secondary" id="btn-view-schedule">View Group Schedule →</button>
     <button class="btn btn-primary" id="btn-submit">Submit &amp; View Schedule →</button>
   </div>
 </div>`;
@@ -1600,6 +1607,7 @@ function attachHandlers() {
 
 function attachInputHandlers() {
   q('#btn-clear')?.addEventListener('click', () => { state.selectedCells.clear(); render(); });
+  q('#btn-view-schedule')?.addEventListener('click', () => goToResults());
   q('#btn-submit')?.addEventListener('click', handleSubmit);
   q('#btn-unavailable')?.addEventListener('click', async () => {
     if (!confirm(`Mark ${state.name} as unavailable this week?`)) return;
