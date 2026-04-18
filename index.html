@@ -1618,14 +1618,14 @@ function attachInputHandlers() {
     const weekStr = weekDateStrs(state.weekMonday)[0];
     const tz = resolveTimezone(state.timezone);
     state.selectedCells.clear();
-    goToResults();
+    showResultsOptimistic({ name: state.name, timezone: tz, utcSlots: [], unavailable: true });
     try {
       await ghWriteChar(state.name, weekStr, { timezone: tz, utcSlots: [], unavailable: true });
       await loadResultsData();
     } catch (e) {
       state.loadStatus = 'error';
       state.loadError  = e.message;
-      render(); attachHandlers();
+      render();
     }
   });
 
@@ -1659,6 +1659,18 @@ function applyCell(k, selecting) {
   if (el) el.classList.toggle('selected', selecting);
 }
 
+function showResultsOptimistic(myEntry) {
+  // Show results immediately with the player's own data, before GitHub confirms
+  state.ghData = [...state.ghData.filter(e => e.name !== state.name), myEntry];
+  state.loadStatus = 'idle';
+  state.loadError  = '';
+  state.saveStatus = 'idle';
+  state.saveError  = '';
+  state.page = 'results';
+  history.pushState({ page: 'results' }, '', '#schedule');
+  render();
+}
+
 async function handleSubmit() {
   if (!state.selectedCells.size) { alert('Select at least one time slot.'); return; }
   const tz       = resolveTimezone(state.timezone);
@@ -1669,14 +1681,14 @@ async function handleSubmit() {
     const [d, h] = k.split('-').map(Number);
     utcSlots.push(localToUTC(dateStrs[d], h, tz));
   });
-  goToResults();
+  showResultsOptimistic({ name: state.name, timezone: tz, utcSlots, unavailable: false });
   try {
     await ghWriteChar(state.name, weekStr, { timezone: tz, utcSlots, unavailable: false });
     await loadResultsData();
   } catch (e) {
     state.loadStatus = 'error';
     state.loadError  = e.message;
-    render(); attachHandlers();
+    render();
   }
 }
 
