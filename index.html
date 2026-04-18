@@ -1,0 +1,1429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>D&D Session Planner</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface2: #1c2333;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-dim: #8b949e;
+    --blue-light: #58a6ff;
+    --blue-mid: #1f6feb;
+    --blue-dark: #0d47a1;
+    --gold: #d4a843;
+    --gold-dim: #8a6d20;
+    --cell-empty: #1c2738;
+    --cell-selected: #1f6feb;
+    --radius: 6px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  /* ═══════════════════════════════════════
+     SETUP PAGE
+  ═══════════════════════════════════════ */
+
+  .setup-page {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 40px 16px 60px;
+  }
+
+  .setup-header {
+    text-align: center;
+    margin-bottom: 36px;
+  }
+  .setup-header h1 {
+    font-size: 2.2rem;
+    font-weight: 800;
+    background: linear-gradient(135deg, #d4a843, #f0c97a, #d4a843);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    letter-spacing: -0.01em;
+    margin-bottom: 8px;
+  }
+  .setup-header p {
+    color: var(--text-dim);
+    font-size: 1rem;
+  }
+
+  .setup-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 28px 24px;
+    width: 100%;
+    max-width: 580px;
+  }
+
+  .setup-section-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 14px;
+  }
+
+  /* ── Character grid ── */
+  .character-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-bottom: 28px;
+  }
+
+  .char-card {
+    background: var(--surface2);
+    border: 2px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 8px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s, transform 0.1s;
+    font-size: 0.92rem;
+    font-weight: 600;
+    color: var(--text);
+    line-height: 1.3;
+    user-select: none;
+  }
+  .char-card:hover {
+    border-color: var(--blue-light);
+    background: #1e2d40;
+  }
+  .char-card.selected {
+    border-color: var(--blue-mid);
+    background: #172b4d;
+    color: #79c0ff;
+    box-shadow: 0 0 0 3px rgba(31,111,235,0.25);
+  }
+  .char-card.char-special {
+    grid-column: 1 / -1;
+    border-color: var(--gold-dim);
+    background: #1e1a0e;
+    color: var(--gold);
+    font-size: 0.95rem;
+    padding: 12px 8px;
+  }
+  .char-card.char-special:hover {
+    border-color: var(--gold);
+    background: #251f0e;
+  }
+  .char-card.char-special.selected {
+    border-color: var(--gold);
+    background: #2a1f05;
+    color: var(--gold);
+    box-shadow: 0 0 0 3px rgba(212,168,67,0.3);
+  }
+
+  /* ── Timezone section ── */
+  .tz-section { margin-bottom: 24px; }
+
+  .tz-autodetect-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+
+  .btn-autodetect {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 9px 16px;
+    border-radius: var(--radius);
+    font-size: 0.88rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: border-color 0.15s;
+    white-space: nowrap;
+  }
+  .btn-autodetect:hover { border-color: var(--blue-light); }
+  .btn-autodetect .icon { font-size: 1rem; }
+
+  .tz-detected-badge {
+    font-size: 0.82rem;
+    color: #3fb950;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex: 1;
+    min-width: 0;
+  }
+  .tz-detected-badge .tz-name {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .tz-divider {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+    color: var(--text-dim);
+    font-size: 0.8rem;
+  }
+  .tz-divider::before, .tz-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  .tz-search-wrap { position: relative; }
+  .tz-search-input {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    padding: 9px 12px 9px 36px;
+    font-size: 0.9rem;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .tz-search-input:focus { border-color: var(--blue-light); }
+  .tz-search-icon {
+    position: absolute;
+    left: 11px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-dim);
+    font-size: 0.9rem;
+    pointer-events: none;
+  }
+
+  .tz-results {
+    margin-top: 6px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+  .tz-results::-webkit-scrollbar { width: 4px; }
+  .tz-results::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .tz-result-item {
+    padding: 9px 12px;
+    cursor: pointer;
+    font-size: 0.88rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid rgba(48,54,61,0.5);
+    transition: background 0.1s;
+  }
+  .tz-result-item:last-child { border-bottom: none; }
+  .tz-result-item:hover { background: #1e2d40; }
+  .tz-result-item.active { background: #172b4d; color: #79c0ff; }
+  .tz-result-offset {
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    font-family: monospace;
+    flex-shrink: 0;
+    margin-left: 10px;
+  }
+  .tz-empty {
+    padding: 12px;
+    color: var(--text-dim);
+    font-size: 0.85rem;
+    text-align: center;
+  }
+
+  .tz-selected-display {
+    margin-top: 10px;
+    padding: 8px 12px;
+    background: #172b4d;
+    border: 1px solid var(--blue-mid);
+    border-radius: var(--radius);
+    font-size: 0.85rem;
+    color: #79c0ff;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  /* ── Enter button ── */
+  .btn-enter {
+    width: 100%;
+    padding: 13px;
+    background: var(--blue-mid);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius);
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: opacity 0.15s, transform 0.1s;
+    letter-spacing: 0.02em;
+  }
+  .btn-enter:hover { opacity: 0.88; }
+  .btn-enter:active { transform: scale(0.98); }
+  .btn-enter:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+    transform: none;
+  }
+  .setup-error {
+    color: #ff7b7b;
+    font-size: 0.82rem;
+    text-align: center;
+    margin-top: 10px;
+    min-height: 18px;
+  }
+
+  /* ── Confirmation view ── */
+  .confirm-body {
+    text-align: center;
+    padding: 12px 0 24px;
+  }
+  .confirm-question {
+    font-size: 1rem;
+    color: var(--text-dim);
+    margin-bottom: 14px;
+  }
+  .confirm-name {
+    font-size: 2rem;
+    font-weight: 800;
+    color: var(--blue-light);
+    letter-spacing: -0.01em;
+    margin-bottom: 16px;
+    line-height: 1.15;
+  }
+  .confirm-name.is-tgap {
+    background: linear-gradient(135deg, #d4a843, #f0c97a);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .confirm-warning {
+    font-size: 0.82rem;
+    color: var(--text-dim);
+    max-width: 320px;
+    margin: 0 auto 28px;
+    line-height: 1.5;
+  }
+  .confirm-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  /* ═══════════════════════════════════════
+     MAIN APP PAGES
+  ═══════════════════════════════════════ */
+
+  .page { max-width: 780px; margin: 0 auto; padding: 24px 16px 40px; }
+
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .header-left h1 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    background: linear-gradient(135deg, #58a6ff, #79c0ff);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .header-left p { color: var(--text-dim); font-size: 0.85rem; margin-top: 3px; }
+  .player-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 6px 14px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+  .player-badge:hover { border-color: var(--blue-light); }
+  .player-badge.is-tgap {
+    border-color: var(--gold-dim);
+    color: var(--gold);
+  }
+  .player-badge .badge-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--blue-light);
+    flex-shrink: 0;
+  }
+  .player-badge.is-tgap .badge-dot { background: var(--gold); }
+
+  /* ── Grid ── */
+  .week-nav {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    margin-bottom: 14px;
+  }
+  .week-nav button {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 5px 14px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: border-color 0.15s;
+  }
+  .week-nav button:hover { border-color: var(--blue-light); }
+  .week-nav span {
+    font-size: 0.9rem;
+    color: var(--text-dim);
+    min-width: 180px;
+    text-align: center;
+  }
+
+  .hint { font-size: 0.8rem; color: var(--text-dim); margin-bottom: 10px; }
+
+  .grid-container {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    background: var(--surface);
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .grid-header {
+    display: grid;
+    grid-template-columns: 56px repeat(7, 1fr);
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 2;
+  }
+  .time-label-header { border-right: 1px solid var(--border); }
+  .day-header {
+    text-align: center;
+    padding: 8px 4px;
+    font-size: 0.77rem;
+    font-weight: 600;
+    border-left: 1px solid var(--border);
+    line-height: 1.3;
+  }
+  .day-header .day-date {
+    display: block;
+    color: var(--text-dim);
+    font-weight: 400;
+    font-size: 0.7rem;
+    margin-top: 2px;
+  }
+  .grid-body {
+    max-height: 520px;
+    overflow-y: auto;
+  }
+  .grid-body::-webkit-scrollbar { width: 6px; }
+  .grid-body::-webkit-scrollbar-track { background: var(--surface); }
+  .grid-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  .grid-row {
+    display: grid;
+    grid-template-columns: 56px repeat(7, 1fr);
+    border-bottom: 1px solid rgba(48,54,61,0.4);
+  }
+  .grid-row:last-child { border-bottom: none; }
+
+  .time-label {
+    font-size: 0.68rem;
+    color: var(--text-dim);
+    padding: 0 6px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    border-right: 1px solid var(--border);
+    min-height: 28px;
+    white-space: nowrap;
+  }
+  .cell {
+    min-height: 28px;
+    border-left: 1px solid rgba(48,54,61,0.35);
+    background: var(--cell-empty);
+    cursor: pointer;
+    transition: filter 0.06s;
+  }
+  .cell:hover { filter: brightness(1.3); }
+  .cell.selected { background: var(--cell-selected); }
+  .heat-cell { cursor: default; position: relative; }
+  .heat-cell:hover::after {
+    content: attr(data-tip);
+    position: absolute;
+    bottom: calc(100% + 4px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: #000d;
+    color: #fff;
+    font-size: 0.7rem;
+    padding: 3px 7px;
+    border-radius: 4px;
+    white-space: nowrap;
+    z-index: 20;
+    pointer-events: none;
+  }
+
+  /* ── Results meta ── */
+  .results-meta {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+  .submitters { flex: 1; min-width: 200px; }
+  .meta-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--text-dim);
+    display: block;
+    margin-bottom: 7px;
+  }
+  .submitter-tag {
+    display: inline-block;
+    background: #1f6feb22;
+    border: 1px solid var(--blue-mid);
+    color: var(--blue-light);
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    margin: 2px 3px 2px 0;
+  }
+  .submitter-tag.is-tgap {
+    background: #d4a84322;
+    border-color: var(--gold-dim);
+    color: var(--gold);
+  }
+  .no-submissions { color: var(--text-dim); font-size: 0.88rem; font-style: italic; }
+
+  .legend {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    font-size: 0.77rem;
+    color: var(--text-dim);
+  }
+  .legend-scale { display: flex; gap: 3px; }
+  .legend-swatch { width: 22px; height: 14px; border-radius: 3px; }
+
+  /* ── View timezone inline selector ── */
+  .view-tz-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .view-tz-row label { font-size: 0.8rem; color: var(--text-dim); white-space: nowrap; }
+  .view-tz-row select {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    padding: 5px 10px;
+    font-size: 0.83rem;
+    outline: none;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  .view-tz-row select:focus { border-color: var(--blue-light); }
+
+  /* ── Buttons ── */
+  .actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    margin-top: 20px;
+    flex-wrap: wrap;
+  }
+  .btn {
+    padding: 9px 20px;
+    border-radius: var(--radius);
+    font-size: 0.88rem;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    transition: opacity 0.15s, transform 0.1s;
+  }
+  .btn:hover { opacity: 0.88; }
+  .btn:active { transform: scale(0.97); }
+  .btn-primary { background: var(--blue-mid); color: #fff; }
+  .btn-secondary {
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+  .btn-danger {
+    background: #2d1b1b;
+    color: #ff7b7b;
+    border: 1px solid #6b2020;
+  }
+  .btn-unavailable {
+    background: #1e1a0e;
+    color: #c9a227;
+    border: 1px solid #6b4f10;
+  }
+  .btn-unavailable:hover { border-color: var(--gold); }
+
+  .unavailable-section {
+    margin-top: 12px;
+    padding: 10px 14px;
+    background: #1e1a0e;
+    border: 1px solid #6b4f10;
+    border-radius: var(--radius);
+  }
+  .unavailable-section .meta-label { color: #8a6d20; margin-bottom: 6px; }
+  .unavailable-tag {
+    display: inline-block;
+    background: #d4a84318;
+    border: 1px solid #6b4f10;
+    color: #c9a227;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    margin: 2px 3px 2px 0;
+  }
+
+  /* ── Responsive ── */
+  @media (max-width: 540px) {
+    .character-grid { grid-template-columns: repeat(2, 1fr); }
+    .grid-header { grid-template-columns: 44px repeat(7, 1fr); }
+    .grid-row    { grid-template-columns: 44px repeat(7, 1fr); }
+    .time-label  { font-size: 0.6rem; padding: 0 3px; }
+    .day-header  { font-size: 0.66rem; padding: 6px 2px; }
+    .cell        { min-height: 24px; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+'use strict';
+
+// ─────────────────────────────────────────────────────────────
+// CONSTANTS
+// ─────────────────────────────────────────────────────────────
+
+const STORAGE_KEY = 'dnd-planner-v1';
+const PREFS_KEY   = 'dnd-planner-prefs';
+const DAYS_SHORT  = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+
+// Alphabetical, "The Great and Powerful" always last
+const CHARACTERS = [
+  'Catriona','Dardriss','Dione','Elias','Tati','Vagabond',
+  'The Great and Powerful'
+];
+
+const TZ_DATA = [
+  // Americas
+  { label: 'Hawaii–Aleutian',       value: 'Pacific/Honolulu',       search: 'hawaii honolulu hst pacific aleutian' },
+  { label: 'Alaska',                value: 'America/Anchorage',      search: 'alaska anchorage juneau akst akdt' },
+  { label: 'Pacific Time',          value: 'America/Los_Angeles',    search: 'pacific pst pdt california ca oregon or washington wa seattle portland los angeles san francisco las vegas nevada nv' },
+  { label: 'Mountain Time',         value: 'America/Denver',         search: 'mountain mst mdt denver colorado co utah ut idaho id wyoming wy montana mt new mexico nm' },
+  { label: 'Mountain (no DST)',     value: 'America/Phoenix',        search: 'arizona az phoenix tucson mountain no daylight saving mst' },
+  { label: 'Central Time',          value: 'America/Chicago',        search: 'central cst cdt chicago illinois il texas tx oklahoma ok kansas ks nebraska ne south dakota sd north dakota nd minnesota mn iowa ia missouri mo wisconsin wi mississippi ms alabama al tennessee tn arkansas ar louisiana la' },
+  { label: 'Eastern Time',          value: 'America/New_York',       search: 'eastern est edt new york ny maine me new hampshire nh vermont vt massachusetts ma rhode island ri connecticut ct new jersey nj pennsylvania pa delaware de maryland md virginia va west virginia wv north carolina nc south carolina sc georgia ga florida fl ohio oh michigan mi indiana in kentucky ky' },
+  { label: 'Atlantic Time',         value: 'America/Halifax',        search: 'atlantic ast adt nova scotia new brunswick prince edward island canada' },
+  { label: 'Newfoundland',          value: 'America/St_Johns',       search: 'newfoundland nst ndt nl canada' },
+  { label: 'São Paulo / Brazil',    value: 'America/Sao_Paulo',      search: 'brazil brasilia sao paulo brt brst south america' },
+  // Europe
+  { label: 'UTC / Greenwich',       value: 'UTC',                    search: 'utc gmt greenwich universal coordinated' },
+  { label: 'London / UK / Ireland', value: 'Europe/London',          search: 'london uk england scotland wales ireland gmt bst britain' },
+  { label: 'Western Europe',        value: 'Europe/Paris',           search: 'paris berlin amsterdam brussels madrid lisbon rome milan barcelona cet cest france germany spain italy netherlands portugal austria switzerland' },
+  { label: 'Eastern Europe',        value: 'Europe/Helsinki',        search: 'helsinki bucharest athens sofia warsaw kyiv eet eest finland romania greece bulgaria poland ukraine' },
+  { label: 'Moscow / Russia',       value: 'Europe/Moscow',          search: 'moscow russia msk' },
+  // Asia / Pacific
+  { label: 'Dubai / Gulf',          value: 'Asia/Dubai',             search: 'dubai abu dhabi gulf uae qatar saudi arabia riyadh gulf standard gst' },
+  { label: 'India',                 value: 'Asia/Kolkata',           search: 'india kolkata mumbai delhi bangalore hyderabad ist' },
+  { label: 'Bangladesh / Dhaka',    value: 'Asia/Dhaka',             search: 'dhaka bangladesh bst' },
+  { label: 'Bangkok / Indochina',   search: 'bangkok thailand vietnam cambodia laos ict ho chi minh',
+    value: 'Asia/Bangkok' },
+  { label: 'Singapore / Malaysia',  value: 'Asia/Singapore',         search: 'singapore malaysia kuala lumpur sgt myt brunei' },
+  { label: 'China / HK / Taiwan',   value: 'Asia/Shanghai',          search: 'china beijing shanghai hong kong taipei cst hkt prc' },
+  { label: 'Japan / Korea',         value: 'Asia/Tokyo',             search: 'japan korea tokyo osaka seoul jst kst' },
+  { label: 'Sydney / Melbourne',    value: 'Australia/Sydney',       search: 'sydney melbourne canberra brisbane queensland aest aedt australia east' },
+  { label: 'Perth / W. Australia',  value: 'Australia/Perth',        search: 'perth western australia awst' },
+  { label: 'Auckland / New Zealand',value: 'Pacific/Auckland',       search: 'auckland wellington new zealand nzst nzdt nz' },
+];
+
+// Pre-compute UTC offset label for display
+function tzOffsetLabel(ianaName) {
+  try {
+    const now = new Date();
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: ianaName, timeZoneName: 'shortOffset'
+    }).formatToParts(now);
+    const off = parts.find(p => p.type === 'timeZoneName');
+    return off ? off.value : '';
+  } catch { return ''; }
+}
+
+// ─────────────────────────────────────────────────────────────
+// WEEK UTILITIES
+// ─────────────────────────────────────────────────────────────
+
+function getMondayOf(d) {
+  const date = new Date(d);
+  date.setHours(0, 0, 0, 0);
+  const day = date.getDay();
+  date.setDate(date.getDate() + (day === 0 ? -6 : 1 - day));
+  return date;
+}
+
+function weekDateStrs(monday) {
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    return d.toISOString().slice(0, 10);
+  });
+}
+
+function weekLabel(monday) {
+  const end = new Date(monday);
+  end.setDate(monday.getDate() + 6);
+  const f = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return `${f(monday)} – ${f(end)}`;
+}
+
+function dayLabel(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+// ─────────────────────────────────────────────────────────────
+// TIMEZONE UTILITIES
+// ─────────────────────────────────────────────────────────────
+
+function resolveTimezone(tz) {
+  return tz || Intl.DateTimeFormat().resolvedOptions().timeZone;
+}
+
+function autoDetectTimezone() {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone;
+}
+
+// Find entry in TZ_DATA for a raw IANA string
+function findTzEntry(ianaName) {
+  return TZ_DATA.find(t => t.value === ianaName) || null;
+}
+
+// Human-readable label for any IANA timezone
+function tzDisplayLabel(ianaName) {
+  const entry = findTzEntry(ianaName);
+  return entry ? entry.label : ianaName.replace(/_/g,' ');
+}
+
+// Filter TZ_DATA by query string
+function searchTz(query) {
+  if (!query.trim()) return TZ_DATA;
+  const q = query.toLowerCase();
+  return TZ_DATA.filter(t =>
+    t.label.toLowerCase().includes(q) ||
+    t.value.toLowerCase().includes(q) ||
+    (t.search || '').toLowerCase().includes(q)
+  );
+}
+
+function localToUTC(dateStr, hour, timezone) {
+  const iso = `${dateStr}T${String(hour).padStart(2,'0')}:00:00`;
+  const fakeUTC = new Date(iso + 'Z');
+  const repr = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: timezone,
+    year:'numeric',month:'2-digit',day:'2-digit',
+    hour:'2-digit',minute:'2-digit',second:'2-digit'
+  }).format(fakeUTC);
+  const tzEquiv = new Date(repr.replace(' ','T')+'Z');
+  return fakeUTC.getTime() + (fakeUTC - tzEquiv);
+}
+
+function utcToSlot(utcMs, timezone, dateStrs) {
+  const d = new Date(utcMs);
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year:'numeric',month:'2-digit',day:'2-digit',
+    hour:'2-digit',hour12:false
+  }).formatToParts(d);
+  const localDate =
+    parts.find(p=>p.type==='year').value+'-'+
+    parts.find(p=>p.type==='month').value+'-'+
+    parts.find(p=>p.type==='day').value;
+  const hour = +parts.find(p=>p.type==='hour').value % 24;
+  const dayIndex = dateStrs.indexOf(localDate);
+  if (dayIndex === -1) return null;
+  return { dayIndex, hour };
+}
+
+// ─────────────────────────────────────────────────────────────
+// STORAGE
+// ─────────────────────────────────────────────────────────────
+
+function loadData() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || { weekStr:null, submissions:[] }; }
+  catch { return { weekStr:null, submissions:[] }; }
+}
+function saveData(d) { localStorage.setItem(STORAGE_KEY, JSON.stringify(d)); }
+
+function loadPrefs() {
+  try { return JSON.parse(localStorage.getItem(PREFS_KEY)) || {}; }
+  catch { return {}; }
+}
+function savePrefs(name, timezone) {
+  localStorage.setItem(PREFS_KEY, JSON.stringify({ name, timezone }));
+}
+
+function upsertSubmission(weekStr, name, timezone, utcSlots, unavailable = false) {
+  const data = loadData();
+  if (data.weekStr !== weekStr) Object.assign(data, { weekStr, submissions:[] });
+  data.submissions = data.submissions.filter(s => s.name.toLowerCase() !== name.toLowerCase());
+  data.submissions.push({ name, timezone, utcSlots, unavailable });
+  saveData(data);
+}
+
+// ─────────────────────────────────────────────────────────────
+// HEAT COLOR
+// ─────────────────────────────────────────────────────────────
+
+function heatColor(count, total) {
+  if (count === 0) return '#1c2738';
+  const t = total === 1 ? 1 : count / total;
+  const r = Math.round(144 + (13  - 144) * t);
+  const g = Math.round(202 + (71  - 202) * t);
+  const b = Math.round(249 + (161 - 249) * t);
+  return `rgb(${r},${g},${b})`;
+}
+
+// ─────────────────────────────────────────────────────────────
+// STATE
+// ─────────────────────────────────────────────────────────────
+
+const prefs = loadPrefs();
+const state = {
+  page: 'setup',
+  confirming: false,
+  name: prefs.name || '',
+  timezone: prefs.timezone || '',
+  tzSearch: '',
+  tzSearchFocused: false,
+  viewTimezone: '',
+  selectedCells: new Set(),
+  weekMonday: getMondayOf(new Date()),
+  dragging: false,
+  dragMode: true,
+  setupError: '',
+};
+
+// ─────────────────────────────────────────────────────────────
+// ROUTING
+// ─────────────────────────────────────────────────────────────
+
+const PAGE_TO_HASH = { setup: 'selection', input: 'availability', results: 'schedule' };
+const HASH_TO_PAGE = { selection: 'setup', availability: 'input', schedule: 'results' };
+
+function navigate(page, replace = false) {
+  state.page = page;
+  const hash = '#' + (PAGE_TO_HASH[page] || 'selection');
+  replace ? history.replaceState({ page }, '', hash)
+          : history.pushState({ page }, '', hash);
+  render();
+}
+
+window.addEventListener('popstate', e => {
+  const page = (e.state && e.state.page) ||
+               HASH_TO_PAGE[location.hash.slice(1)] ||
+               'setup';
+  // Guard: can't land on input/results without a character
+  if (page !== 'setup' && !state.name) {
+    navigate('setup', true);
+    return;
+  }
+  state.page = page;
+  render();
+});
+
+// ─────────────────────────────────────────────────────────────
+// RENDER ROUTER
+// ─────────────────────────────────────────────────────────────
+
+function render() {
+  const root = document.getElementById('root');
+  if (state.page === 'setup')   root.innerHTML = buildSetupPage();
+  else if (state.page === 'input')   root.innerHTML = buildInputPage();
+  else root.innerHTML = buildResultsPage();
+  attachHandlers();
+}
+
+// ─────────────────────────────────────────────────────────────
+// SETUP PAGE
+// ─────────────────────────────────────────────────────────────
+
+function buildSetupPage() {
+  if (state.confirming) {
+    const isTGAP = state.name === 'The Great and Powerful';
+    return `<div class="setup-page">
+  <div class="setup-header">
+    <h1>⚔️ D&D Session Planner</h1>
+  </div>
+  <div class="setup-card">
+    <div class="confirm-body">
+      <p class="confirm-question">Are you sure you're</p>
+      <p class="confirm-name${isTGAP ? ' is-tgap' : ''}">${escHtml(state.name)}?</p>
+      <p class="confirm-warning">Once you're in, your availability will be saved under this name. Make sure it's you!</p>
+      <div class="confirm-actions">
+        <button class="btn btn-secondary" id="btn-confirm-back">← Pick a different character</button>
+        <button class="btn btn-primary" id="btn-confirm-yes">Yes, that's me →</button>
+      </div>
+    </div>
+  </div>
+</div>`;
+  }
+
+  const charCards = CHARACTERS.map(name => {
+    const isSpecial = name === 'The Great and Powerful';
+    const isSelected = state.name === name;
+    const cls = [
+      'char-card',
+      isSpecial ? 'char-special' : '',
+      isSelected ? 'selected' : ''
+    ].filter(Boolean).join(' ');
+    return `<div class="${cls}" data-char="${escHtml(name)}">${escHtml(name)}</div>`;
+  }).join('');
+
+  const tzEntry = state.timezone ? findTzEntry(state.timezone) : null;
+  const detectedDisplay = state.timezone
+    ? `<div class="tz-selected-display">
+        ✓ <strong>${escHtml(tzEntry ? tzEntry.label : state.timezone.replace(/_/g,' '))}</strong>
+        &nbsp;<span style="color:var(--text-dim);font-size:0.78rem">${tzOffsetLabel(state.timezone)}</span>
+       </div>`
+    : '';
+
+  const searchResults = buildTzSearchResults();
+  const bothReady = state.name && state.timezone;
+
+  return `<div class="setup-page">
+  <div class="setup-header">
+    <h1>⚔️ D&D Session Planner</h1>
+    <p>Choose your character and timezone to begin</p>
+  </div>
+
+  <div class="setup-card">
+    <div class="setup-section-label">Who are you?</div>
+    <div class="character-grid">${charCards}</div>
+
+    <div class="setup-section-label">Your timezone</div>
+    <div class="tz-section">
+      <div class="tz-autodetect-row">
+        <button class="btn-autodetect" id="btn-autodetect">
+          <span class="icon">🌍</span> Auto-detect
+        </button>
+        ${state.timezone ? `<div class="tz-detected-badge">
+          <span>✓</span>
+          <span class="tz-name">${escHtml(tzEntry ? tzEntry.label : state.timezone.replace(/_/g,' '))} &nbsp;
+            <span style="font-size:0.74rem;color:var(--text-dim)">${tzOffsetLabel(state.timezone)}</span>
+          </span>
+        </div>` : '<span style="color:var(--text-dim);font-size:0.82rem">Not set yet</span>'}
+      </div>
+
+      <div class="tz-divider">or search manually</div>
+
+      <div class="tz-search-wrap">
+        <span class="tz-search-icon">🔍</span>
+        <input id="tz-search"
+               class="tz-search-input"
+               type="text"
+               placeholder="City, state, country or timezone…"
+               value="${escHtml(state.tzSearch)}"
+               autocomplete="off">
+      </div>
+      ${searchResults}
+      ${state.timezone && !state.tzSearch ? detectedDisplay : ''}
+    </div>
+
+    <button class="btn-enter" id="btn-enter" ${bothReady ? '' : 'disabled'}>
+      ${bothReady ? `Enter as ${state.name} →` : 'Select a character &amp; timezone to continue'}
+    </button>
+    <div class="setup-error" id="setup-error">${escHtml(state.setupError)}</div>
+  </div>
+</div>`;
+}
+
+function buildTzSearchResults() {
+  if (!state.tzSearch.trim()) return '';
+  const results = searchTz(state.tzSearch).slice(0, 8);
+  if (!results.length) return `<div class="tz-results"><div class="tz-empty">No results for "${escHtml(state.tzSearch)}"</div></div>`;
+  const items = results.map(tz => {
+    const active = state.timezone === tz.value ? ' active' : '';
+    return `<div class="tz-result-item${active}" data-tz-val="${escHtml(tz.value)}">
+      <span>${escHtml(tz.label)}</span>
+      <span class="tz-result-offset">${tzOffsetLabel(tz.value)}</span>
+    </div>`;
+  }).join('');
+  return `<div class="tz-results" id="tz-results">${items}</div>`;
+}
+
+function attachSetupHandlers() {
+  // Confirmation screen — only these two buttons exist, bail out early
+  if (state.confirming) {
+    q('#btn-confirm-back').addEventListener('click', () => {
+      state.confirming = false;
+      render();
+    });
+    q('#btn-confirm-yes').addEventListener('click', () => {
+      state.confirming = false;
+      savePrefs(state.name, state.timezone);
+      navigate('input');
+    });
+    return;
+  }
+
+  // Character cards
+  document.querySelectorAll('[data-char]').forEach(card => {
+    card.addEventListener('click', () => {
+      const chosen = card.dataset.char;
+      if (chosen === 'The Great and Powerful') {
+        const pw = prompt('Enter the DM password:');
+        if (pw === null) return;
+        if (pw !== '1234') { state.setupError = 'Incorrect password.'; render(); return; }
+      }
+      state.name = chosen;
+      state.setupError = '';
+      render();
+    });
+  });
+
+  // Auto-detect
+  q('#btn-autodetect').addEventListener('click', () => {
+    const iana = autoDetectTimezone();
+    state.timezone = iana;
+    state.tzSearch = '';
+    state.setupError = '';
+    render();
+  });
+
+  // Timezone search input
+  const tzInput = q('#tz-search');
+  if (tzInput) {
+    tzInput.addEventListener('input', e => {
+      state.tzSearch = e.target.value;
+      // Re-render just the results area without losing focus
+      const wrap = q('.tz-search-wrap');
+      if (wrap) {
+        // Re-render only the results list
+        const old = q('#tz-results') || q('.tz-results');
+        const newHtml = buildTzSearchResults();
+        const temp = document.createElement('div');
+        temp.innerHTML = newHtml;
+        const newResults = temp.firstChild;
+        if (old) old.replaceWith(newResults || document.createTextNode(''));
+        else if (newResults) wrap.insertAdjacentElement('afterend', newResults);
+        // Update the button state
+        const btn = q('#btn-enter');
+        if (btn) {
+          const ready = state.name && state.timezone;
+          btn.disabled = !ready;
+          btn.innerHTML = ready ? `Enter as ${escHtml(state.name)} →` : 'Select a character &amp; timezone to continue';
+        }
+        // Re-attach tz result item handlers
+        document.querySelectorAll('[data-tz-val]').forEach(item => {
+          item.addEventListener('click', () => {
+            state.timezone = item.dataset.tzVal;
+            state.tzSearch = '';
+            state.setupError = '';
+            render();
+          });
+        });
+      }
+    });
+    // Restore focus position
+    tzInput.focus();
+    tzInput.setSelectionRange(tzInput.value.length, tzInput.value.length);
+  }
+
+  // Tz result items
+  document.querySelectorAll('[data-tz-val]').forEach(item => {
+    item.addEventListener('click', () => {
+      state.timezone = item.dataset.tzVal;
+      state.tzSearch = '';
+      state.setupError = '';
+      render();
+    });
+  });
+
+  // Enter button → show confirmation screen
+  const btnEnter = q('#btn-enter');
+  if (btnEnter) {
+    btnEnter.addEventListener('click', () => {
+      if (!state.name) { state.setupError = 'Please pick a character.'; render(); return; }
+      if (!state.timezone) { state.setupError = 'Please set your timezone.'; render(); return; }
+      state.confirming = true;
+      render();
+    });
+  }
+
+  // Confirmation screen buttons
+  q('#btn-confirm-back')?.addEventListener('click', () => {
+    state.confirming = false;
+    render();
+  });
+  q('#btn-confirm-yes')?.addEventListener('click', () => {
+    state.confirming = false;
+    savePrefs(state.name, state.timezone);
+    navigate('input');
+  });
+}
+
+// ─────────────────────────────────────────────────────────────
+// INPUT PAGE
+// ─────────────────────────────────────────────────────────────
+
+function buildInputPage() {
+  const dateStrs = weekDateStrs(state.weekMonday);
+  const isTGAP = state.name === 'The Great and Powerful';
+
+  const dayHeaders = dateStrs.map((ds, i) =>
+    `<div class="day-header">${DAYS_SHORT[i]}<span class="day-date">${dayLabel(ds)}</span></div>`
+  ).join('');
+
+  let rows = '';
+  for (let h = 0; h < 24; h++) {
+    let cells = `<div class="time-label">${fmtHour(h)}</div>`;
+    for (let d = 0; d < 7; d++) {
+      const k = `${d}-${h}`;
+      cells += `<div class="cell${state.selectedCells.has(k)?' selected':''}" data-k="${k}"></div>`;
+    }
+    rows += `<div class="grid-row">${cells}</div>`;
+  }
+
+  return `<div class="page">
+  <header>
+    <div class="header-left">
+      <h1>📅 Availability</h1>
+      <p>Select hours you're free — click &amp; drag to mark a range</p>
+    </div>
+    <div class="player-badge${isTGAP?' is-tgap':''}" id="btn-switch-char">
+      <span class="badge-dot"></span>
+      ${escHtml(state.name)}
+    </div>
+  </header>
+
+  <div class="week-nav">
+    <button id="btn-prev-week">← Prev</button>
+    <span>${weekLabel(state.weekMonday)}</span>
+    <button id="btn-next-week">Next →</button>
+  </div>
+
+  <p class="hint">Drag to select. Drag on a selected cell to deselect.</p>
+
+  <div class="grid-container">
+    <div class="grid-header">
+      <div class="time-label-header"></div>
+      ${dayHeaders}
+    </div>
+    <div class="grid-body" id="grid-body">${rows}</div>
+  </div>
+
+  <div class="actions">
+    <button class="btn btn-unavailable" id="btn-unavailable">😴 Unavailable This Week</button>
+    <button class="btn btn-secondary" id="btn-clear">Clear All</button>
+    <button class="btn btn-primary" id="btn-submit">Submit &amp; View Schedule →</button>
+  </div>
+</div>`;
+}
+
+// ─────────────────────────────────────────────────────────────
+// RESULTS PAGE
+// ─────────────────────────────────────────────────────────────
+
+function buildResultsPage() {
+  const dateStrs = weekDateStrs(state.weekMonday);
+  const weekStr  = dateStrs[0];
+  const data     = loadData();
+  const tz       = resolveTimezone(state.viewTimezone);
+  const subs         = data.weekStr === weekStr ? data.submissions : [];
+  const availForHeat = subs.filter(s => !s.unavailable);
+  const total        = availForHeat.length;
+
+  const heat = Array.from({length:7}, () => Array(24).fill(0));
+  availForHeat.forEach(sub => {
+    sub.utcSlots.forEach(ms => {
+      const slot = utcToSlot(ms, tz, dateStrs);
+      if (slot) heat[slot.dayIndex][slot.hour]++;
+    });
+  });
+
+  const dayHeaders = dateStrs.map((ds, i) =>
+    `<div class="day-header">${DAYS_SHORT[i]}<span class="day-date">${dayLabel(ds)}</span></div>`
+  ).join('');
+
+  let rows = '';
+  for (let h = 0; h < 24; h++) {
+    let cells = `<div class="time-label">${fmtHour(h)}</div>`;
+    for (let d = 0; d < 7; d++) {
+      const count = heat[d][h];
+      const tip = total > 0 ? `${count}/${total} available` : 'No data yet';
+      cells += `<div class="cell heat-cell" style="background:${heatColor(count,total)}" data-tip="${tip}"></div>`;
+    }
+    rows += `<div class="grid-row">${cells}</div>`;
+  }
+
+  const availableSubs   = subs.filter(s => !s.unavailable);
+  const unavailableSubs = subs.filter(s => s.unavailable);
+
+  const tags = availableSubs.length
+    ? availableSubs.map(s => {
+        const tgap = s.name === 'The Great and Powerful' ? ' is-tgap' : '';
+        return `<span class="submitter-tag${tgap}">${escHtml(s.name)}</span>`;
+      }).join('')
+    : '<span class="no-submissions">No availability submitted yet.</span>';
+
+  const unavailableSection = unavailableSubs.length
+    ? `<div class="unavailable-section">
+        <span class="meta-label">Can't make it this week (${unavailableSubs.length})</span>
+        ${unavailableSubs.map(s => `<span class="unavailable-tag">${escHtml(s.name)}</span>`).join('')}
+       </div>`
+    : '';
+
+  const legendHtml = [0,.25,.5,.75,1].map(t => {
+    const r=Math.round(144+(13-144)*t), g=Math.round(202+(71-202)*t), b=Math.round(249+(161-249)*t);
+    const bg = t===0 ? '#1c2738' : `rgb(${r},${g},${b})`;
+    return `<div class="legend-swatch" style="background:${bg}"></div>`;
+  }).join('');
+
+  const tzOptions = TZ_DATA.map(t =>
+    `<option value="${escHtml(t.value)}"${state.viewTimezone===t.value?' selected':''}>${escHtml(t.label)}</option>`
+  ).join('');
+
+  return `<div class="page">
+  <header>
+    <div class="header-left">
+      <h1>🗓 Group Schedule</h1>
+      <p>Darker = more people available</p>
+    </div>
+    <div class="player-badge${state.name==='The Great and Powerful'?' is-tgap':''}" id="btn-switch-char">
+      <span class="badge-dot"></span>
+      ${escHtml(state.name)}
+    </div>
+  </header>
+
+  <div class="results-meta">
+    <div class="submitters">
+      <span class="meta-label">Submitted (${total})</span>
+      ${tags}
+    </div>
+    <div class="view-tz-row">
+      <label>View as:</label>
+      <select id="view-tz">
+        <option value="">Auto (${escHtml(Intl.DateTimeFormat().resolvedOptions().timeZone)})</option>
+        ${tzOptions}
+      </select>
+    </div>
+  </div>
+
+  ${unavailableSection}
+
+  <div class="legend">
+    <span>None</span>
+    <div class="legend-scale">${legendHtml}</div>
+    <span>All</span>
+  </div>
+
+  <div class="week-nav">
+    <button id="btn-prev-week">← Prev</button>
+    <span>${weekLabel(state.weekMonday)}</span>
+    <button id="btn-next-week">Next →</button>
+  </div>
+
+  <div class="grid-container">
+    <div class="grid-header">
+      <div class="time-label-header"></div>
+      ${dayHeaders}
+    </div>
+    <div class="grid-body">${rows}</div>
+  </div>
+
+  <div class="actions">
+    <button class="btn btn-secondary" id="btn-back">← Edit My Availability</button>
+    <button class="btn btn-danger" id="btn-reset">
+      ${state.name === 'The Great and Powerful' ? '☠️ Clear All Data' : 'Remove My Availability'}
+    </button>
+  </div>
+</div>`;
+}
+
+// ─────────────────────────────────────────────────────────────
+// ATTACH HANDLERS
+// ─────────────────────────────────────────────────────────────
+
+function attachHandlers() {
+  if (state.page === 'setup') { attachSetupHandlers(); return; }
+
+  // Shared: character badge → back to setup
+  const badge = q('#btn-switch-char');
+  if (badge) badge.addEventListener('click', () => { navigate('setup'); });
+
+  // Week nav (shared)
+  const prevWeek = () => {
+    state.weekMonday = getMondayOf(new Date(state.weekMonday.getTime() - 7*86400000));
+    if (state.page === 'input') state.selectedCells.clear();
+    render();
+  };
+  const nextWeek = () => {
+    state.weekMonday = getMondayOf(new Date(state.weekMonday.getTime() + 7*86400000));
+    if (state.page === 'input') state.selectedCells.clear();
+    render();
+  };
+  q('#btn-prev-week')?.addEventListener('click', prevWeek);
+  q('#btn-next-week')?.addEventListener('click', nextWeek);
+
+  if (state.page === 'input') attachInputHandlers();
+  else attachResultsHandlers();
+}
+
+function attachInputHandlers() {
+  q('#btn-clear')?.addEventListener('click', () => { state.selectedCells.clear(); render(); });
+  q('#btn-submit')?.addEventListener('click', handleSubmit);
+  q('#btn-unavailable')?.addEventListener('click', () => {
+    if (!confirm(`Mark ${state.name} as unavailable this week?`)) return;
+    const dateStrs = weekDateStrs(state.weekMonday);
+    upsertSubmission(dateStrs[0], state.name, resolveTimezone(state.timezone), [], true);
+    state.selectedCells.clear();
+    navigate('results');
+  });
+
+  const body = q('#grid-body');
+  if (!body) return;
+
+  body.addEventListener('mousedown', e => {
+    const cell = e.target.closest('[data-k]');
+    if (!cell) return;
+    e.preventDefault();
+    const k = cell.dataset.k;
+    state.dragging = true;
+    state.dragMode = !state.selectedCells.has(k);
+    applyCell(k, state.dragMode);
+  });
+
+  body.addEventListener('mouseover', e => {
+    if (!state.dragging) return;
+    const cell = e.target.closest('[data-k]');
+    if (cell) applyCell(cell.dataset.k, state.dragMode);
+  });
+
+  // mouseup on document (not just grid) to end drag
+  document.addEventListener('mouseup', () => { state.dragging = false; });
+}
+
+function applyCell(k, selecting) {
+  if (selecting) state.selectedCells.add(k);
+  else state.selectedCells.delete(k);
+  const el = document.querySelector(`[data-k="${k}"]`);
+  if (el) el.classList.toggle('selected', selecting);
+}
+
+function handleSubmit() {
+  if (!state.selectedCells.size) { alert('Select at least one time slot.'); return; }
+  const tz       = resolveTimezone(state.timezone);
+  const dateStrs = weekDateStrs(state.weekMonday);
+  const utcSlots = [];
+  state.selectedCells.forEach(k => {
+    const [d, h] = k.split('-').map(Number);
+    utcSlots.push(localToUTC(dateStrs[d], h, tz));
+  });
+  upsertSubmission(dateStrs[0], state.name, tz, utcSlots);
+  navigate('results');
+}
+
+function attachResultsHandlers() {
+  q('#btn-back')?.addEventListener('click', () => { navigate('input'); });
+  q('#btn-reset')?.addEventListener('click', () => {
+    if (state.name === 'The Great and Powerful') {
+      const pw = prompt('Enter the DM password to clear all availability data:');
+      if (pw === null) return; // cancelled
+      if (pw !== '1234') { alert('Incorrect password.'); return; }
+      localStorage.removeItem(STORAGE_KEY);
+      state.selectedCells.clear();
+      navigate('input');
+    } else {
+      if (!confirm(`Remove your availability (${state.name}) from this week's schedule?`)) return;
+      const data = loadData();
+      data.submissions = data.submissions.filter(
+        s => s.name.toLowerCase() !== state.name.toLowerCase()
+      );
+      saveData(data);
+      state.selectedCells.clear();
+      navigate('input');
+    }
+  });
+  q('#view-tz')?.addEventListener('change', e => { state.viewTimezone = e.target.value; render(); });
+}
+
+// ─────────────────────────────────────────────────────────────
+// UTILITIES
+// ─────────────────────────────────────────────────────────────
+
+function fmtHour(h) {
+  if (h === 0)  return '12 AM';
+  if (h < 12)   return `${h} AM`;
+  if (h === 12) return '12 PM';
+  return `${h - 12} PM`;
+}
+
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function q(sel) { return document.querySelector(sel); }
+
+// ─────────────────────────────────────────────────────────────
+// INIT
+// ─────────────────────────────────────────────────────────────
+
+(function initFromURL() {
+  const hash = location.hash.slice(1); // e.g. "availability"
+  const page = HASH_TO_PAGE[hash];
+  // Only honour the hash if we already have a character selected
+  if (page && page !== 'setup' && state.name) {
+    state.page = page;
+  } else {
+    state.page = 'setup';
+  }
+  history.replaceState({ page: state.page }, '', '#' + PAGE_TO_HASH[state.page]);
+  render();
+}());
+</script>
+</body>
+</html>
