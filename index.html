@@ -1068,11 +1068,43 @@ window.addEventListener('popstate', e => {
   state.page = page;
   render();
   if (page === 'results') loadResultsData();
+  if (page === 'input') loadInputData();
 });
 
 // ─────────────────────────────────────────────────────────────
 // RESULTS DATA LOADING
 // ─────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────
+// INPUT DATA LOADING (pre-fill grid from GitHub)
+// ─────────────────────────────────────────────────────────────
+
+function goToInput() {
+  state.page = 'input';
+  history.pushState({ page: 'input' }, '', '#availability');
+  render();
+  loadInputData();
+}
+
+async function loadInputData() {
+  if (!state.name) return;
+  const weekStr  = weekDateStrs(state.weekMonday)[0];
+  const dateStrs = weekDateStrs(state.weekMonday);
+  const tz       = resolveTimezone(state.timezone);
+  try {
+    const fileData = await ghReadChar(state.name);
+    const entry    = fileData[weekStr];
+    state.selectedCells.clear();
+    if (entry && !entry.unavailable && entry.utcSlots) {
+      entry.utcSlots.forEach(ms => {
+        const slot = utcToSlot(ms, tz, dateStrs);
+        if (slot) state.selectedCells.add(`${slot.dayIndex}-${slot.hour}`);
+      });
+    }
+  } catch (_) { /* leave grid blank on error */ }
+  render();
+  attachHandlers();
+}
 
 function goToResults() {
   state.loadStatus = 'loading';
@@ -1240,7 +1272,7 @@ function attachSetupHandlers() {
     q('#btn-confirm-yes').addEventListener('click', () => {
       state.confirming = false;
       savePrefs(state.name, state.timezone);
-      navigate('input');
+      goToInput();
     });
     return;
   }
@@ -1337,7 +1369,7 @@ function attachSetupHandlers() {
   q('#btn-confirm-yes')?.addEventListener('click', () => {
     state.confirming = false;
     savePrefs(state.name, state.timezone);
-    navigate('input');
+    goToInput();
   });
 
   // GitHub token save
@@ -1556,7 +1588,7 @@ function attachHandlers() {
   // Week nav (shared)
   const shiftWeek = (dir) => {
     state.weekMonday = getMondayOf(new Date(state.weekMonday.getTime() + dir * 7 * 86400000));
-    if (state.page === 'input') { state.selectedCells.clear(); render(); }
+    if (state.page === 'input') { state.selectedCells.clear(); render(); loadInputData(); }
     else { state.loadStatus = 'loading'; state.ghData = []; render(); loadResultsData(); }
   };
   q('#btn-prev-week')?.addEventListener('click', () => shiftWeek(-1));
@@ -1637,7 +1669,7 @@ async function handleSubmit() {
 }
 
 function attachResultsHandlers() {
-  q('#btn-back')?.addEventListener('click', () => { navigate('input'); });
+  q('#btn-back')?.addEventListener('click', () => { goToInput(); });
   q('#btn-retry')?.addEventListener('click', () => { state.loadStatus = 'loading'; render(); loadResultsData(); });
 
   q('#btn-reset')?.addEventListener('click', async () => {
@@ -1660,9 +1692,8 @@ function attachResultsHandlers() {
       state.saveStatus = 'saving'; render(); attachHandlers();
       try {
         await ghDeleteWeek(state.name, weekStr);
-        state.selectedCells.clear();
         state.saveStatus = 'idle';
-        navigate('input');
+        goToInput();
       } catch (e) {
         state.saveStatus = 'error'; state.saveError = e.message;
         render(); attachHandlers();
