@@ -617,6 +617,97 @@
     margin: 2px 3px 2px 0;
   }
 
+  /* ── GitHub token section ── */
+  .token-details {
+    margin-top: 20px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .token-details summary {
+    padding: 10px 14px;
+    cursor: pointer;
+    font-size: 0.82rem;
+    color: var(--text-dim);
+    background: var(--surface2);
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    user-select: none;
+  }
+  .token-details summary::-webkit-details-marker { display: none; }
+  .token-details summary:hover { color: var(--text); }
+  .token-ok   { color: #3fb950; font-size: 0.78rem; }
+  .token-miss { color: #e3b341; font-size: 0.78rem; }
+  .token-body { padding: 14px; }
+  .token-hint { font-size: 0.8rem; color: var(--text-dim); margin-bottom: 10px; line-height: 1.5; }
+  .token-row  { display: flex; gap: 8px; }
+  .token-row input {
+    flex: 1;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    padding: 8px 10px;
+    font-size: 0.85rem;
+    font-family: monospace;
+    outline: none;
+  }
+  .token-row input:focus { border-color: var(--blue-light); }
+
+  /* ── Save / load status ── */
+  .save-status {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 0.82rem;
+    padding: 8px 0 0;
+    min-height: 28px;
+  }
+  .save-status.saving { color: var(--text-dim); }
+  .save-status.error  { color: #ff7b7b; }
+  .spinner {
+    width: 14px; height: 14px;
+    border: 2px solid var(--border);
+    border-top-color: var(--blue-light);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    flex-shrink: 0;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .results-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    padding: 60px 20px;
+    color: var(--text-dim);
+    font-size: 0.9rem;
+  }
+  .results-loading .spinner { width: 28px; height: 28px; border-width: 3px; }
+  .results-error {
+    padding: 24px;
+    background: #2d1b1b;
+    border: 1px solid #6b2020;
+    border-radius: var(--radius);
+    color: #ff7b7b;
+    font-size: 0.88rem;
+    line-height: 1.5;
+  }
+  .results-error button {
+    margin-top: 12px;
+    background: none;
+    border: 1px solid #6b2020;
+    color: #ff7b7b;
+    padding: 6px 14px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-size: 0.82rem;
+  }
+
   /* ── Responsive ── */
   @media (max-width: 540px) {
     .character-grid { grid-template-columns: repeat(2, 1fr); }
@@ -637,8 +728,12 @@
 // CONSTANTS
 // ─────────────────────────────────────────────────────────────
 
-const STORAGE_KEY = 'dnd-planner-v1';
 const PREFS_KEY   = 'dnd-planner-prefs';
+const TOKEN_KEY   = 'gh-token';
+const GH_OWNER    = 'rolandomarcos14-beep';
+const GH_REPO     = 'dnd-planner';
+const GH_BRANCH   = 'main';
+const CHARS_DIR   = 'Characters';
 const DAYS_SHORT  = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 
 // Alphabetical, "The Great and Powerful" always last
@@ -787,14 +882,118 @@ function utcToSlot(utcMs, timezone, dateStrs) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// STORAGE
+// GITHUB API
 // ─────────────────────────────────────────────────────────────
 
-function loadData() {
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || { weekStr:null, submissions:[] }; }
-  catch { return { weekStr:null, submissions:[] }; }
+function getGHToken() { return localStorage.getItem(TOKEN_KEY) || ''; }
+function setGHToken(t) { localStorage.setItem(TOKEN_KEY, t.trim()); }
+
+function toBase64(str) {
+  const bytes = new TextEncoder().encode(str);
+  let bin = '';
+  bytes.forEach(b => { bin += String.fromCharCode(b); });
+  return btoa(bin);
 }
-function saveData(d) { localStorage.setItem(STORAGE_KEY, JSON.stringify(d)); }
+function fromBase64(b64) {
+  const bin = atob(b64.replace(/\s/g, ''));
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
+}
+
+// Read one character's JSON file. Returns {} if the file doesn't exist yet.
+async function ghReadChar(name) {
+  const url = `https://raw.githubusercontent.com/${GH_OWNER}/${GH_REPO}/${GH_BRANCH}/${CHARS_DIR}/${encodeURIComponent(name)}.json?_=${Date.now()}`;
+  const res = await fetch(url);
+  if (res.status === 404) return {};
+  if (!res.ok) throw new Error(`Read failed (${res.status})`);
+  return res.json();
+}
+
+// Read all characters for a given weekStr. Returns array of submission objects.
+async function ghReadAllChars(weekStr) {
+  const settled = await Promise.allSettled(
+    CHARACTERS.map(async name => {
+      const data = await ghReadChar(name);
+      const entry = data[weekStr];
+      if (!entry) return null;
+      return { name, timezone: entry.timezone, utcSlots: entry.utcSlots || [], unavailable: !!entry.unavailable };
+    })
+  );
+  return settled
+    .filter(r => r.status === 'fulfilled' && r.value !== null)
+    .map(r => r.value);
+}
+
+// Write a week entry for one character (merges with existing weeks in that file).
+async function ghWriteChar(name, weekStr, weekData) {
+  const token = getGHToken();
+  if (!token) throw new Error('No GitHub token — tap ⚙️ on the character screen and paste the token your DM gave you.');
+
+  const apiUrl = `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/contents/${CHARS_DIR}/${encodeURIComponent(name)}.json`;
+  const headers = { 'Authorization': `Bearer ${token}`, 'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json' };
+
+  let sha, existing = {};
+  const getRes = await fetch(apiUrl, { headers });
+  if (getRes.ok) {
+    const j = await getRes.json();
+    sha = j.sha;
+    try { existing = JSON.parse(fromBase64(j.content)); } catch {}
+  } else if (getRes.status !== 404) {
+    const err = await getRes.json().catch(() => ({}));
+    throw new Error(err.message || `GitHub read error (${getRes.status})`);
+  }
+
+  const merged = { ...existing, [weekStr]: weekData };
+  const putRes = await fetch(apiUrl, {
+    method: 'PUT', headers,
+    body: JSON.stringify({
+      message: `Availability: ${name} — ${weekStr}`,
+      content: toBase64(JSON.stringify(merged, null, 2)),
+      branch: GH_BRANCH,
+      ...(sha ? { sha } : {}),
+    }),
+  });
+  if (!putRes.ok) {
+    const err = await putRes.json().catch(() => ({}));
+    throw new Error(err.message || `GitHub write error (${putRes.status})`);
+  }
+}
+
+// Delete a week entry from one character's file (used by "Remove My Availability").
+async function ghDeleteWeek(name, weekStr) {
+  const token = getGHToken();
+  if (!token) throw new Error('No GitHub token set.');
+
+  const apiUrl = `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/contents/${CHARS_DIR}/${encodeURIComponent(name)}.json`;
+  const headers = { 'Authorization': `Bearer ${token}`, 'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json' };
+
+  const getRes = await fetch(apiUrl, { headers });
+  if (!getRes.ok) return; // nothing to delete
+  const j = await getRes.json();
+  let existing = {};
+  try { existing = JSON.parse(fromBase64(j.content)); } catch {}
+
+  delete existing[weekStr];
+  await fetch(apiUrl, {
+    method: 'PUT', headers,
+    body: JSON.stringify({
+      message: `Remove availability: ${name} — ${weekStr}`,
+      content: toBase64(JSON.stringify(existing, null, 2)),
+      branch: GH_BRANCH,
+      sha: j.sha,
+    }),
+  });
+}
+
+// Clear the current week from ALL character files (DM only).
+async function ghClearAllForWeek(weekStr) {
+  await Promise.allSettled(CHARACTERS.map(name => ghDeleteWeek(name, weekStr)));
+}
+
+// ─────────────────────────────────────────────────────────────
+// PREFS (localStorage — personal settings only)
+// ─────────────────────────────────────────────────────────────
 
 function loadPrefs() {
   try { return JSON.parse(localStorage.getItem(PREFS_KEY)) || {}; }
@@ -802,14 +1001,6 @@ function loadPrefs() {
 }
 function savePrefs(name, timezone) {
   localStorage.setItem(PREFS_KEY, JSON.stringify({ name, timezone }));
-}
-
-function upsertSubmission(weekStr, name, timezone, utcSlots, unavailable = false) {
-  const data = loadData();
-  if (data.weekStr !== weekStr) Object.assign(data, { weekStr, submissions:[] });
-  data.submissions = data.submissions.filter(s => s.name.toLowerCase() !== name.toLowerCase());
-  data.submissions.push({ name, timezone, utcSlots, unavailable });
-  saveData(data);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -843,6 +1034,12 @@ const state = {
   dragging: false,
   dragMode: true,
   setupError: '',
+  // async data
+  ghData: [],           // submissions for the current week loaded from GitHub
+  loadStatus: 'idle',   // 'idle' | 'loading' | 'error'
+  loadError: '',
+  saveStatus: 'idle',   // 'idle' | 'saving' | 'error'
+  saveError: '',
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -864,14 +1061,40 @@ window.addEventListener('popstate', e => {
   const page = (e.state && e.state.page) ||
                HASH_TO_PAGE[location.hash.slice(1)] ||
                'setup';
-  // Guard: can't land on input/results without a character
-  if (page !== 'setup' && !state.name) {
-    navigate('setup', true);
-    return;
-  }
+  if (page !== 'setup' && !state.name) { navigate('setup', true); return; }
   state.page = page;
   render();
+  if (page === 'results') loadResultsData();
 });
+
+// ─────────────────────────────────────────────────────────────
+// RESULTS DATA LOADING
+// ─────────────────────────────────────────────────────────────
+
+function goToResults() {
+  state.loadStatus = 'loading';
+  state.loadError  = '';
+  state.ghData     = [];
+  state.saveStatus = 'idle';
+  state.saveError  = '';
+  state.page = 'results';
+  history.pushState({ page: 'results' }, '', '#schedule');
+  render();
+  loadResultsData();
+}
+
+async function loadResultsData() {
+  const weekStr = weekDateStrs(state.weekMonday)[0];
+  try {
+    state.ghData     = await ghReadAllChars(weekStr);
+    state.loadStatus = 'idle';
+  } catch (e) {
+    state.loadStatus = 'error';
+    state.loadError  = e.message;
+  }
+  render();
+  attachHandlers();
+}
 
 // ─────────────────────────────────────────────────────────────
 // RENDER ROUTER
@@ -975,6 +1198,17 @@ function buildSetupPage() {
       ${bothReady ? `Enter as ${state.name} →` : 'Select a character &amp; timezone to continue'}
     </button>
     <div class="setup-error" id="setup-error">${escHtml(state.setupError)}</div>
+
+    <details class="token-details" ${!getGHToken() ? 'open' : ''}>
+      <summary>⚙️ GitHub access token &nbsp;<span class="${getGHToken() ? 'token-ok' : 'token-miss'}">${getGHToken() ? '✓ configured' : '⚠ required to save data'}</span></summary>
+      <div class="token-body">
+        <p class="token-hint">Your DM will share a token with the group. Paste it once and it's remembered. Without it you can view the schedule but not submit availability.</p>
+        <div class="token-row">
+          <input type="password" id="inp-token" placeholder="ghp_…" value="${escHtml(getGHToken())}">
+          <button class="btn btn-secondary" id="btn-save-token">Save</button>
+        </div>
+      </div>
+    </details>
   </div>
 </div>`;
 }
@@ -1102,6 +1336,17 @@ function attachSetupHandlers() {
     savePrefs(state.name, state.timezone);
     navigate('input');
   });
+
+  // GitHub token save
+  q('#btn-save-token')?.addEventListener('click', () => {
+    const val = q('#inp-token')?.value.trim();
+    if (!val) return;
+    setGHToken(val);
+    render();
+  });
+  q('#inp-token')?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') q('#btn-save-token')?.click();
+  });
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -1168,11 +1413,50 @@ function buildInputPage() {
 
 function buildResultsPage() {
   const dateStrs = weekDateStrs(state.weekMonday);
-  const weekStr  = dateStrs[0];
-  const data     = loadData();
   const tz       = resolveTimezone(state.viewTimezone);
-  const subs         = data.weekStr === weekStr ? data.submissions : [];
+  const isTGAP   = state.name === 'The Great and Powerful';
+
+  const tzOptions = TZ_DATA.map(t =>
+    `<option value="${escHtml(t.value)}"${state.viewTimezone===t.value?' selected':''}>${escHtml(t.label)}</option>`
+  ).join('');
+
+  const header = `<header>
+    <div class="header-left">
+      <h1>🗓 Group Schedule</h1>
+      <p>Darker = more people available</p>
+    </div>
+    <div class="player-badge${isTGAP?' is-tgap':''}" id="btn-switch-char">
+      <span class="badge-dot"></span>${escHtml(state.name)}
+    </div>
+  </header>`;
+
+  const weekNav = `<div class="week-nav">
+    <button id="btn-prev-week">← Prev</button>
+    <span>${weekLabel(state.weekMonday)}</span>
+    <button id="btn-next-week">Next →</button>
+  </div>`;
+
+  // Loading state
+  if (state.loadStatus === 'loading') {
+    return `<div class="page">${header}${weekNav}
+    <div class="results-loading"><div class="spinner"></div>Loading schedule from GitHub…</div></div>`;
+  }
+
+  // Error state
+  if (state.loadStatus === 'error') {
+    return `<div class="page">${header}${weekNav}
+    <div class="results-error">
+      <strong>Couldn't load schedule</strong><br>${escHtml(state.loadError)}
+      <br><button id="btn-retry">Retry</button>
+    </div>
+    <div class="actions"><button class="btn btn-secondary" id="btn-back">← Edit My Availability</button></div>
+    </div>`;
+  }
+
+  // Normal state — build heatmap from state.ghData
+  const subs         = state.ghData;
   const availForHeat = subs.filter(s => !s.unavailable);
+  const unavailSubs  = subs.filter(s => s.unavailable);
   const total        = availForHeat.length;
 
   const heat = Array.from({length:7}, () => Array(24).fill(0));
@@ -1198,49 +1482,35 @@ function buildResultsPage() {
     rows += `<div class="grid-row">${cells}</div>`;
   }
 
-  const availableSubs   = subs.filter(s => !s.unavailable);
-  const unavailableSubs = subs.filter(s => s.unavailable);
-
-  const tags = availableSubs.length
-    ? availableSubs.map(s => {
-        const tgap = s.name === 'The Great and Powerful' ? ' is-tgap' : '';
-        return `<span class="submitter-tag${tgap}">${escHtml(s.name)}</span>`;
+  const tags = availForHeat.length
+    ? availForHeat.map(s => {
+        const cls = s.name === 'The Great and Powerful' ? ' is-tgap' : '';
+        return `<span class="submitter-tag${cls}">${escHtml(s.name)}</span>`;
       }).join('')
     : '<span class="no-submissions">No availability submitted yet.</span>';
 
-  const unavailableSection = unavailableSubs.length
+  const unavailSection = unavailSubs.length
     ? `<div class="unavailable-section">
-        <span class="meta-label">Can't make it this week (${unavailableSubs.length})</span>
-        ${unavailableSubs.map(s => `<span class="unavailable-tag">${escHtml(s.name)}</span>`).join('')}
-       </div>`
-    : '';
+        <span class="meta-label">Can't make it this week (${unavailSubs.length})</span>
+        ${unavailSubs.map(s=>`<span class="unavailable-tag">${escHtml(s.name)}</span>`).join('')}
+       </div>` : '';
 
   const legendHtml = [0,.25,.5,.75,1].map(t => {
     const r=Math.round(144+(13-144)*t), g=Math.round(202+(71-202)*t), b=Math.round(249+(161-249)*t);
-    const bg = t===0 ? '#1c2738' : `rgb(${r},${g},${b})`;
-    return `<div class="legend-swatch" style="background:${bg}"></div>`;
+    return `<div class="legend-swatch" style="background:${t===0?'#1c2738':`rgb(${r},${g},${b})`}"></div>`;
   }).join('');
 
-  const tzOptions = TZ_DATA.map(t =>
-    `<option value="${escHtml(t.value)}"${state.viewTimezone===t.value?' selected':''}>${escHtml(t.label)}</option>`
-  ).join('');
+  const saveBar = state.saveStatus === 'saving'
+    ? `<div class="save-status saving"><div class="spinner"></div>Saving to GitHub…</div>`
+    : state.saveStatus === 'error'
+    ? `<div class="save-status error">⚠ ${escHtml(state.saveError)}</div>`
+    : '';
 
   return `<div class="page">
-  <header>
-    <div class="header-left">
-      <h1>🗓 Group Schedule</h1>
-      <p>Darker = more people available</p>
-    </div>
-    <div class="player-badge${state.name==='The Great and Powerful'?' is-tgap':''}" id="btn-switch-char">
-      <span class="badge-dot"></span>
-      ${escHtml(state.name)}
-    </div>
-  </header>
-
+  ${header}
   <div class="results-meta">
     <div class="submitters">
-      <span class="meta-label">Submitted (${total})</span>
-      ${tags}
+      <span class="meta-label">Submitted (${total})</span>${tags}
     </div>
     <div class="view-tz-row">
       <label>View as:</label>
@@ -1250,33 +1520,20 @@ function buildResultsPage() {
       </select>
     </div>
   </div>
-
-  ${unavailableSection}
-
+  ${unavailSection}
   <div class="legend">
-    <span>None</span>
-    <div class="legend-scale">${legendHtml}</div>
-    <span>All</span>
+    <span>None</span><div class="legend-scale">${legendHtml}</div><span>All</span>
   </div>
-
-  <div class="week-nav">
-    <button id="btn-prev-week">← Prev</button>
-    <span>${weekLabel(state.weekMonday)}</span>
-    <button id="btn-next-week">Next →</button>
-  </div>
-
+  ${weekNav}
   <div class="grid-container">
-    <div class="grid-header">
-      <div class="time-label-header"></div>
-      ${dayHeaders}
-    </div>
+    <div class="grid-header"><div class="time-label-header"></div>${dayHeaders}</div>
     <div class="grid-body">${rows}</div>
   </div>
-
+  ${saveBar}
   <div class="actions">
     <button class="btn btn-secondary" id="btn-back">← Edit My Availability</button>
     <button class="btn btn-danger" id="btn-reset">
-      ${state.name === 'The Great and Powerful' ? '☠️ Clear All Data' : 'Remove My Availability'}
+      ${isTGAP ? '☠️ Clear All Data' : 'Remove My Availability'}
     </button>
   </div>
 </div>`;
@@ -1294,18 +1551,13 @@ function attachHandlers() {
   if (badge) badge.addEventListener('click', () => { navigate('setup'); });
 
   // Week nav (shared)
-  const prevWeek = () => {
-    state.weekMonday = getMondayOf(new Date(state.weekMonday.getTime() - 7*86400000));
-    if (state.page === 'input') state.selectedCells.clear();
-    render();
+  const shiftWeek = (dir) => {
+    state.weekMonday = getMondayOf(new Date(state.weekMonday.getTime() + dir * 7 * 86400000));
+    if (state.page === 'input') { state.selectedCells.clear(); render(); }
+    else { state.loadStatus = 'loading'; state.ghData = []; render(); loadResultsData(); }
   };
-  const nextWeek = () => {
-    state.weekMonday = getMondayOf(new Date(state.weekMonday.getTime() + 7*86400000));
-    if (state.page === 'input') state.selectedCells.clear();
-    render();
-  };
-  q('#btn-prev-week')?.addEventListener('click', prevWeek);
-  q('#btn-next-week')?.addEventListener('click', nextWeek);
+  q('#btn-prev-week')?.addEventListener('click', () => shiftWeek(-1));
+  q('#btn-next-week')?.addEventListener('click', () => shiftWeek(+1));
 
   if (state.page === 'input') attachInputHandlers();
   else attachResultsHandlers();
@@ -1314,12 +1566,20 @@ function attachHandlers() {
 function attachInputHandlers() {
   q('#btn-clear')?.addEventListener('click', () => { state.selectedCells.clear(); render(); });
   q('#btn-submit')?.addEventListener('click', handleSubmit);
-  q('#btn-unavailable')?.addEventListener('click', () => {
+  q('#btn-unavailable')?.addEventListener('click', async () => {
     if (!confirm(`Mark ${state.name} as unavailable this week?`)) return;
-    const dateStrs = weekDateStrs(state.weekMonday);
-    upsertSubmission(dateStrs[0], state.name, resolveTimezone(state.timezone), [], true);
+    const weekStr = weekDateStrs(state.weekMonday)[0];
+    const tz = resolveTimezone(state.timezone);
     state.selectedCells.clear();
-    navigate('results');
+    goToResults();
+    try {
+      await ghWriteChar(state.name, weekStr, { timezone: tz, utcSlots: [], unavailable: true });
+      await loadResultsData();
+    } catch (e) {
+      state.loadStatus = 'error';
+      state.loadError  = e.message;
+      render(); attachHandlers();
+    }
   });
 
   const body = q('#grid-body');
@@ -1352,41 +1612,62 @@ function applyCell(k, selecting) {
   if (el) el.classList.toggle('selected', selecting);
 }
 
-function handleSubmit() {
+async function handleSubmit() {
   if (!state.selectedCells.size) { alert('Select at least one time slot.'); return; }
   const tz       = resolveTimezone(state.timezone);
   const dateStrs = weekDateStrs(state.weekMonday);
+  const weekStr  = dateStrs[0];
   const utcSlots = [];
   state.selectedCells.forEach(k => {
     const [d, h] = k.split('-').map(Number);
     utcSlots.push(localToUTC(dateStrs[d], h, tz));
   });
-  upsertSubmission(dateStrs[0], state.name, tz, utcSlots);
-  navigate('results');
+  goToResults();
+  try {
+    await ghWriteChar(state.name, weekStr, { timezone: tz, utcSlots, unavailable: false });
+    await loadResultsData();
+  } catch (e) {
+    state.loadStatus = 'error';
+    state.loadError  = e.message;
+    render(); attachHandlers();
+  }
 }
 
 function attachResultsHandlers() {
   q('#btn-back')?.addEventListener('click', () => { navigate('input'); });
-  q('#btn-reset')?.addEventListener('click', () => {
+  q('#btn-retry')?.addEventListener('click', () => { state.loadStatus = 'loading'; render(); loadResultsData(); });
+
+  q('#btn-reset')?.addEventListener('click', async () => {
+    const weekStr = weekDateStrs(state.weekMonday)[0];
     if (state.name === 'The Great and Powerful') {
-      const pw = prompt('Enter the DM password to clear all availability data:');
-      if (pw === null) return; // cancelled
+      const pw = prompt('Enter the DM password to clear all data for this week:');
+      if (pw === null) return;
       if (pw !== '1234') { alert('Incorrect password.'); return; }
-      localStorage.removeItem(STORAGE_KEY);
-      state.selectedCells.clear();
-      navigate('input');
+      state.saveStatus = 'saving'; render(); attachHandlers();
+      try {
+        await ghClearAllForWeek(weekStr);
+        state.selectedCells.clear();
+        await loadResultsData();
+      } catch (e) {
+        state.saveStatus = 'error'; state.saveError = e.message;
+        render(); attachHandlers();
+      }
     } else {
-      if (!confirm(`Remove your availability (${state.name}) from this week's schedule?`)) return;
-      const data = loadData();
-      data.submissions = data.submissions.filter(
-        s => s.name.toLowerCase() !== state.name.toLowerCase()
-      );
-      saveData(data);
-      state.selectedCells.clear();
-      navigate('input');
+      if (!confirm(`Remove your availability (${state.name}) from this week?`)) return;
+      state.saveStatus = 'saving'; render(); attachHandlers();
+      try {
+        await ghDeleteWeek(state.name, weekStr);
+        state.selectedCells.clear();
+        state.saveStatus = 'idle';
+        navigate('input');
+      } catch (e) {
+        state.saveStatus = 'error'; state.saveError = e.message;
+        render(); attachHandlers();
+      }
     }
   });
-  q('#view-tz')?.addEventListener('change', e => { state.viewTimezone = e.target.value; render(); });
+
+  q('#view-tz')?.addEventListener('change', e => { state.viewTimezone = e.target.value; render(); attachHandlers(); });
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -1413,16 +1694,21 @@ function q(sel) { return document.querySelector(sel); }
 // ─────────────────────────────────────────────────────────────
 
 (function initFromURL() {
-  const hash = location.hash.slice(1); // e.g. "availability"
+  const hash = location.hash.slice(1);
   const page = HASH_TO_PAGE[hash];
-  // Only honour the hash if we already have a character selected
   if (page && page !== 'setup' && state.name) {
     state.page = page;
   } else {
     state.page = 'setup';
   }
   history.replaceState({ page: state.page }, '', '#' + PAGE_TO_HASH[state.page]);
-  render();
+  if (state.page === 'results') {
+    state.loadStatus = 'loading';
+    render();
+    loadResultsData();
+  } else {
+    render();
+  }
 }());
 </script>
 </body>
