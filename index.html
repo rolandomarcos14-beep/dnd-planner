@@ -1004,6 +1004,45 @@ async function ghClearAllForWeek(weekStr) {
 }
 
 // ─────────────────────────────────────────────────────────────
+// DRAFT STORAGE (localStorage — unsaved week selections)
+// ─────────────────────────────────────────────────────────────
+
+function draftKey(name, weekStr) { return `dnd-draft-${name}-${weekStr}`; }
+
+function saveDraft(name, weekStr, cells) {
+  localStorage.setItem(draftKey(name, weekStr), JSON.stringify([...cells]));
+}
+
+function loadDraft(name, weekStr) {
+  try {
+    const raw = localStorage.getItem(draftKey(name, weekStr));
+    return raw ? new Set(JSON.parse(raw)) : null;
+  } catch { return null; }
+}
+
+function clearDraft(name, weekStr) {
+  localStorage.removeItem(draftKey(name, weekStr));
+}
+
+function getAllDrafts(name) {
+  const prefix = draftKey(name, '');
+  const drafts = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key && key.startsWith(prefix)) {
+      const weekStr = key.slice(prefix.length);
+      const cells = loadDraft(name, weekStr);
+      if (cells && cells.size > 0) drafts.push({ weekStr, cells });
+    }
+  }
+  return drafts;
+}
+
+function countDrafts(name, excludeWeekStr) {
+  return getAllDrafts(name).filter(d => d.weekStr !== excludeWeekStr).length;
+}
+
+// ─────────────────────────────────────────────────────────────
 // PREFS (localStorage — personal settings only)
 // ─────────────────────────────────────────────────────────────
 
@@ -1053,7 +1092,6 @@ const state = {
   saveStatus: 'idle',   // 'idle' | 'saving' | 'error'
   saveError: '',
   inputLoading: false,  // true while pre-filling grid from GitHub
-  weekSelections: new Map(), // weekStr → Set<cellKey> — unsaved local edits per week
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -1110,9 +1148,9 @@ async function loadInputData() {
   try {
     const fileData = await ghReadChar(state.name);
     if (seq !== _inputLoadSeq) return; // stale response — a newer week was requested
-    const cached = state.weekSelections.get(weekStr);
-    if (cached !== undefined) {
-      state.selectedCells = new Set(cached);
+    const draft = loadDraft(state.name, weekStr);
+    if (draft !== null) {
+      state.selectedCells = draft;
     } else {
       const entry = fileData[weekStr];
       state.selectedCells.clear();
@@ -1455,7 +1493,7 @@ function buildInputPage() {
     <div class="grid-body${state.inputLoading ? ' loading' : ''}" id="grid-body">${rows}</div>
   </div>
 
-  ${state.weekSelections.size > 0 ? `<p class="hint" style="color:var(--accent)">⚠️ Unsaved changes on ${state.weekSelections.size} other week${state.weekSelections.size > 1 ? 's' : ''} — Submit saves this week only.</p>` : ''}
+  ${(function(){ const n = countDrafts(state.name, weekDateStrs(state.weekMonday)[0]); return n > 0 ? `<p class="hint" style="color:var(--accent)">📋 ${n} other week${n>1?'s':''} saved locally — Submit will push all of them to GitHub.</p>` : ''; })()}
   <div class="actions">
     <button class="btn btn-unavailable" id="btn-unavailable">😴 Unavailable This Week</button>
     <button class="btn btn-secondary" id="btn-clear">Clear All</button>
@@ -1610,12 +1648,13 @@ function attachHandlers() {
 
   // Week nav (shared)
   const shiftWeek = (dir) => {
-    if (state.page === 'input') {
+    if (state.page === 'input' && state.selectedCells.size > 0) {
       const leaving = weekDateStrs(state.weekMonday)[0];
-      if (state.selectedCells.size > 0) {
-        state.weekSelections.set(leaving, new Set(state.selectedCells));
+      const save = confirm(`Save your selections for ${weekLabel(state.weekMonday)} before switching weeks?\n\nOK = save locally   Cancel = discard`);
+      if (save) {
+        saveDraft(state.name, leaving, state.selectedCells);
       } else {
-        state.weekSelections.delete(leaving);
+        clearDraft(state.name, leaving);
       }
     }
     state.weekMonday = getMondayOf(new Date(state.weekMonday.getTime() + dir * 7 * 86400000));
@@ -1703,10 +1742,25 @@ async function handleSubmit() {
     const [d, h] = k.split('-').map(Number);
     utcSlots.push(localToUTC(dateStrs[d], h, tz));
   });
+
+  // Collect all saved drafts for other weeks + current week
+  const otherDrafts = getAllDrafts(state.name).filter(d => d.weekStr !== weekStr);
+
   showResultsOptimistic({ name: state.name, timezone: tz, utcSlots, unavailable: false });
   try {
+    // Write current week
     await ghWriteChar(state.name, weekStr, { timezone: tz, utcSlots, unavailable: false });
-    state.weekSelections.delete(weekStr);
+    clearDraft(state.name, weekStr);
+    // Write all other saved drafts in parallel
+    await Promise.all(otherDrafts.map(({ weekStr: ws, cells }) => {
+      const wDateStrs = weekDateStrs(getMondayFromStr(ws));
+      const wSlots = [...cells].map(k => {
+        const [d, h] = k.split('-').map(Number);
+        return localToUTC(wDateStrs[d], h, tz);
+      });
+      return ghWriteChar(state.name, ws, { timezone: tz, utcSlots: wSlots, unavailable: false })
+        .then(() => clearDraft(state.name, ws));
+    }));
     await loadResultsData();
   } catch (e) {
     state.loadStatus = 'error';
