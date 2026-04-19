@@ -738,7 +738,7 @@ const GH_OWNER    = 'rolandomarcos14-beep';
 const GH_REPO     = 'dnd-planner';
 const GH_BRANCH   = 'main';
 const CHARS_DIR   = 'Characters';
-const DAYS_SHORT  = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+const DAYS_SHORT  = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
 // Alphabetical, "The Great and Powerful" always last
 const CHARACTERS = [
@@ -794,11 +794,10 @@ function tzOffsetLabel(ianaName) {
 // WEEK UTILITIES
 // ─────────────────────────────────────────────────────────────
 
-function getMondayOf(d) {
+function getSundayOf(d) {
   const date = new Date(d);
   date.setHours(0, 0, 0, 0);
-  const day = date.getDay();
-  date.setDate(date.getDate() + (day === 0 ? -6 : 1 - day));
+  date.setDate(date.getDate() - date.getDay()); // getDay(): 0=Sun → 0, 1=Mon → -1, etc.
   return date;
 }
 
@@ -807,11 +806,14 @@ function getMondayFromStr(s) {
   return new Date(y, m - 1, d);
 }
 
-function weekDateStrs(monday) {
+function weekDateStrs(sunday) {
   return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(monday);
-    d.setDate(monday.getDate() + i);
-    return d.toISOString().slice(0, 10);
+    const d = new Date(sunday);
+    d.setDate(sunday.getDate() + i);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
   });
 }
 
@@ -1081,7 +1083,7 @@ const state = {
   tzSearchFocused: false,
   viewTimezone: '',
   selectedCells: new Set(),
-  weekMonday: getMondayOf(new Date()),
+  weekMonday: getSundayOf(new Date()),
   dragging: false,
   dragMode: true,
   setupError: '',
@@ -1657,7 +1659,7 @@ function attachHandlers() {
         clearDraft(state.name, leaving);
       }
     }
-    state.weekMonday = getMondayOf(new Date(state.weekMonday.getTime() + dir * 7 * 86400000));
+    state.weekMonday = getSundayOf(new Date(state.weekMonday.getTime() + dir * 7 * 86400000));
     if (state.page === 'input') {
       state.selectedCells.clear(); render(); loadInputData();
     }
