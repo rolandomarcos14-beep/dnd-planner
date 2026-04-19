@@ -802,6 +802,11 @@ function getMondayOf(d) {
   return date;
 }
 
+function getMondayFromStr(s) {
+  const [y, m, d] = s.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
 function weekDateStrs(monday) {
   return Array.from({ length: 7 }, (_, i) => {
     const d = new Date(monday);
@@ -1048,6 +1053,7 @@ const state = {
   saveStatus: 'idle',   // 'idle' | 'saving' | 'error'
   saveError: '',
   inputLoading: false,  // true while pre-filling grid from GitHub
+  weekSelections: new Map(), // weekStr → Set<cellKey> — unsaved local edits per week
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -1104,13 +1110,18 @@ async function loadInputData() {
   try {
     const fileData = await ghReadChar(state.name);
     if (seq !== _inputLoadSeq) return; // stale response — a newer week was requested
-    const entry = fileData[weekStr];
-    state.selectedCells.clear();
-    if (entry && !entry.unavailable && entry.utcSlots) {
-      entry.utcSlots.forEach(ms => {
-        const slot = utcToSlot(ms, tz, dateStrs);
-        if (slot) state.selectedCells.add(`${slot.dayIndex}-${slot.hour}`);
-      });
+    const cached = state.weekSelections.get(weekStr);
+    if (cached !== undefined) {
+      state.selectedCells = new Set(cached);
+    } else {
+      const entry = fileData[weekStr];
+      state.selectedCells.clear();
+      if (entry && !entry.unavailable && entry.utcSlots) {
+        entry.utcSlots.forEach(ms => {
+          const slot = utcToSlot(ms, tz, dateStrs);
+          if (slot) state.selectedCells.add(`${slot.dayIndex}-${slot.hour}`);
+        });
+      }
     }
   } catch (_) { /* leave grid blank on error */ }
   state.inputLoading = false;
@@ -1444,6 +1455,7 @@ function buildInputPage() {
     <div class="grid-body${state.inputLoading ? ' loading' : ''}" id="grid-body">${rows}</div>
   </div>
 
+  ${state.weekSelections.size > 0 ? `<p class="hint" style="color:var(--accent)">⚠️ Unsaved changes on ${state.weekSelections.size} other week${state.weekSelections.size > 1 ? 's' : ''} — Submit saves this week only.</p>` : ''}
   <div class="actions">
     <button class="btn btn-unavailable" id="btn-unavailable">😴 Unavailable This Week</button>
     <button class="btn btn-secondary" id="btn-clear">Clear All</button>
@@ -1598,8 +1610,18 @@ function attachHandlers() {
 
   // Week nav (shared)
   const shiftWeek = (dir) => {
+    if (state.page === 'input') {
+      const leaving = weekDateStrs(state.weekMonday)[0];
+      if (state.selectedCells.size > 0) {
+        state.weekSelections.set(leaving, new Set(state.selectedCells));
+      } else {
+        state.weekSelections.delete(leaving);
+      }
+    }
     state.weekMonday = getMondayOf(new Date(state.weekMonday.getTime() + dir * 7 * 86400000));
-    if (state.page === 'input') { state.selectedCells.clear(); render(); loadInputData(); }
+    if (state.page === 'input') {
+      state.selectedCells.clear(); render(); loadInputData();
+    }
     else { state.loadStatus = 'loading'; state.ghData = []; render(); loadResultsData(); }
   };
   q('#btn-prev-week')?.addEventListener('click', () => shiftWeek(-1));
@@ -1684,6 +1706,7 @@ async function handleSubmit() {
   showResultsOptimistic({ name: state.name, timezone: tz, utcSlots, unavailable: false });
   try {
     await ghWriteChar(state.name, weekStr, { timezone: tz, utcSlots, unavailable: false });
+    state.weekSelections.delete(weekStr);
     await loadResultsData();
   } catch (e) {
     state.loadStatus = 'error';
