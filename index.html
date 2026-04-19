@@ -915,13 +915,16 @@ function fromBase64(b64) {
   return new TextDecoder().decode(bytes);
 }
 
-// Read one character's JSON file. Returns {} if the file doesn't exist yet.
+// Read one character's JSON file via the authenticated Contents API (always fresh, never CDN-cached).
 async function ghReadChar(name) {
-  const url = `https://raw.githubusercontent.com/${GH_OWNER}/${GH_REPO}/${GH_BRANCH}/${CHARS_DIR}/${encodeURIComponent(name)}.json?_=${Date.now()}`;
-  const res = await fetch(url);
+  const token = getGHToken();
+  const url = `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/contents/${CHARS_DIR}/${encodeURIComponent(name)}.json?ref=${GH_BRANCH}`;
+  const headers = { 'Accept': 'application/vnd.github+json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) };
+  const res = await fetch(url, { headers });
   if (res.status === 404) return {};
   if (!res.ok) throw new Error(`Read failed (${res.status})`);
-  return res.json();
+  const { content } = await res.json();
+  return JSON.parse(fromBase64(content));
 }
 
 // Read all characters for a given weekStr. Returns array of submission objects.
