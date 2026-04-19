@@ -1000,9 +1000,24 @@ async function ghDeleteWeek(name, weekStr) {
   });
 }
 
-// Clear the current week from ALL character files (DM only).
-async function ghClearAllForWeek(weekStr) {
-  await Promise.allSettled(CHARACTERS.map(name => ghDeleteWeek(name, weekStr)));
+// Delete a single character's JSON file from GitHub entirely.
+async function ghDeleteFile(name) {
+  const token = getGHToken();
+  if (!token) throw new Error('No GitHub token set.');
+  const apiUrl = `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/contents/${CHARS_DIR}/${encodeURIComponent(name)}.json`;
+  const headers = { 'Authorization': `Bearer ${token}`, 'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json' };
+  const getRes = await fetch(apiUrl, { headers });
+  if (!getRes.ok) return; // file doesn't exist — nothing to do
+  const { sha } = await getRes.json();
+  await fetch(apiUrl, {
+    method: 'DELETE', headers,
+    body: JSON.stringify({ message: `Clear all data: ${name}`, sha, branch: GH_BRANCH }),
+  });
+}
+
+// Delete ALL character files — gives the DM a completely blank canvas.
+async function ghClearAllFiles() {
+  await Promise.allSettled(CHARACTERS.map(name => ghDeleteFile(name)));
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -1778,13 +1793,15 @@ function attachResultsHandlers() {
   q('#btn-reset')?.addEventListener('click', async () => {
     const weekStr = weekDateStrs(state.weekMonday)[0];
     if (state.name === 'The Great and Powerful') {
-      const pw = prompt('Enter the DM password to clear all data for this week:');
+      const pw = prompt('Enter the DM password to delete ALL availability data for every character and every week:');
       if (pw === null) return;
       if (pw !== '1234') { alert('Incorrect password.'); return; }
+      if (!confirm('This will permanently delete all character data files. There is no undo. Continue?')) return;
       state.saveStatus = 'saving'; render(); attachHandlers();
       try {
-        await ghClearAllForWeek(weekStr);
+        await ghClearAllFiles();
         state.selectedCells.clear();
+        state.ghData = [];
         await loadResultsData();
       } catch (e) {
         state.saveStatus = 'error'; state.saveError = e.message;
