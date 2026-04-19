@@ -1001,23 +1001,26 @@ async function ghDeleteWeek(name, weekStr) {
 }
 
 // Delete a single character's JSON file from GitHub entirely.
-async function ghDeleteFile(name) {
+// Delete ALL character files by listing the directory first, so we use real file names/SHAs.
+async function ghClearAllFiles() {
   const token = getGHToken();
   if (!token) throw new Error('No GitHub token set.');
-  const apiUrl = `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/contents/${CHARS_DIR}/${encodeURIComponent(name)}.json`;
   const headers = { 'Authorization': `Bearer ${token}`, 'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json' };
-  const getRes = await fetch(apiUrl, { headers });
-  if (!getRes.ok) return; // file doesn't exist — nothing to do
-  const { sha } = await getRes.json();
-  await fetch(apiUrl, {
-    method: 'DELETE', headers,
-    body: JSON.stringify({ message: `Clear all data: ${name}`, sha, branch: GH_BRANCH }),
-  });
-}
 
-// Delete ALL character files — gives the DM a completely blank canvas.
-async function ghClearAllFiles() {
-  await Promise.allSettled(CHARACTERS.map(name => ghDeleteFile(name)));
+  // List every file currently in the Characters directory
+  const dirUrl = `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/contents/${CHARS_DIR}?ref=${GH_BRANCH}`;
+  const listRes = await fetch(dirUrl, { headers });
+  if (!listRes.ok) return; // directory empty or doesn't exist — nothing to do
+  const files = await listRes.json();
+  if (!Array.isArray(files) || files.length === 0) return;
+
+  // Delete every file we find using its real path + SHA
+  await Promise.allSettled(files.map(file =>
+    fetch(`https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/contents/${file.path}`, {
+      method: 'DELETE', headers,
+      body: JSON.stringify({ message: `DM clear all data: ${file.name}`, sha: file.sha, branch: GH_BRANCH }),
+    })
+  ));
 }
 
 // ─────────────────────────────────────────────────────────────
